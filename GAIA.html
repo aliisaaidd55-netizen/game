@@ -1,0 +1,1323 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>🌍 أنقذ مدينتك - لعبة بيئية واقعية</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: "Segoe UI", Tahoma, Arial, "Noto Naskh Arabic", sans-serif;
+      direction: rtl;
+      background: #0f172a;
+      overflow: hidden;
+    }
+
+    #gameContainer {
+      width: 100%;
+      height: 100vh;
+      position: relative;
+      display: flex;
+    }
+
+    #map {
+      flex: 1;
+      height: 100%;
+      transition: filter 1s ease;
+    }
+
+    .game-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      pointer-events: none;
+      background: radial-gradient(circle at center, transparent 40%, rgba(220, 38, 38, 0.15) 100%);
+      transition: background 1s ease;
+      z-index: 1;
+    }
+
+    .game-overlay.healthy {
+      background: radial-gradient(circle at center, transparent 40%, rgba(34, 197, 94, 0.1) 100%);
+    }
+
+    .city-score-hud {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(15, 23, 42, 0.95);
+      -webkit-backdrop-filter: blur();
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 24px;
+      min-width: 280px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      border: 2px solid rgba(239, 68, 68, 0.3);
+      pointer-events: auto;
+      z-index: 10;
+      transition: border-color 0.5s ease;
+    }
+
+    .city-score-hud.healthy {
+      border-color: rgba(34, 197, 94, 0.5);
+    }
+
+    .city-avatar {
+      width: 120px;
+      height: 120px;
+      margin: 0 auto 16px;
+      font-size: 80px;
+      text-align: center;
+      animation: float 3s ease-in-out infinite;
+      filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.3));
+      transition: all 0.5s ease;
+    }
+
+    .city-avatar.sick {
+      animation: shake 0.5s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-10px); }
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-5px) rotate(-2deg); }
+      75% { transform: translateX(5px) rotate(2deg); }
+    }
+
+    .city-name {
+      font-size: 20px;
+      font-weight: 700;
+      color: white;
+      text-align: center;
+      margin-bottom: 16px;
+    }
+
+    .score-bar {
+      margin: 12px 0;
+    }
+
+    .score-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+      font-size: 14px;
+      color: #cbd5e1;
+    }
+
+    .score-value {
+      font-weight: 700;
+      font-size: 16px;
+    }
+
+    .progress-bar {
+      height: 24px;
+      background: rgba(30, 41, 59, 0.8);
+      border-radius: 12px;
+      overflow: hidden;
+      position: relative;
+      border: 1px solid rgba(100, 116, 139, 0.3);
+    }
+
+    .progress-fill {
+      height: 100%;
+      transition: width 0.5s ease, background 0.5s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 12px;
+      color: white;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    }
+
+    .pollution-fill {
+      background: linear-gradient(90deg, #dc2626, #ef4444);
+    }
+
+    .pollution-fill.low {
+      background: linear-gradient(90deg, #f59e0b, #fbbf24);
+    }
+
+    .pollution-fill.minimal {
+      background: linear-gradient(90deg, #22c55e, #10b981);
+    }
+
+    .health-fill {
+      background: linear-gradient(90deg, #ef4444, #dc2626);
+    }
+
+    .health-fill.good {
+      background: linear-gradient(90deg, #f59e0b, #fbbf24);
+    }
+
+    .health-fill.excellent {
+      background: linear-gradient(90deg, #10b981, #22c55e);
+    }
+
+    .player-stats {
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(100, 116, 139, 0.3);
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 8px 0;
+      font-size: 14px;
+      color: #cbd5e1;
+    }
+
+    .stat-value {
+      font-weight: 700;
+      color: #fbbf24;
+      font-size: 16px;
+    }
+
+    .action-panel {
+      position: absolute;
+      left: 20px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(15, 23, 42, 0.95);
+      -webkit-backdrop-filter: blur();
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 24px;
+      min-width: 280px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      border: 2px solid rgba(59, 130, 246, 0.3);
+      pointer-events: auto;
+      z-index: 10;
+    }
+
+    .panel-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: white;
+      text-align: center;
+      margin-bottom: 20px;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    .action-btn {
+      width: 100%;
+      padding: 16px;
+      margin: 10px 0;
+      border: none;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+      font-family: inherit;
+    }
+
+    .action-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 0.5s;
+    }
+
+    .action-btn:hover::before {
+      left: 100%;
+    }
+
+    .action-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    .action-btn:active {
+      transform: translateY(0);
+    }
+
+    .action-btn.plant {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+    }
+
+    .action-btn.clean {
+      background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+      color: white;
+    }
+
+    .action-btn.recycle {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: white;
+    }
+
+    .action-btn.quiz {
+      background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+      color: white;
+    }
+
+    .action-cost {
+      font-size: 12px;
+      opacity: 0.9;
+    }
+
+    .action-icon {
+      font-size: 24px;
+    }
+
+    .quiz-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.85);
+      -webkit-backdrop-filter: blur();
+      backdrop-filter: blur(10px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .quiz-modal.active {
+      display: flex;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .quiz-card {
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border-radius: 24px;
+      padding: 40px;
+      max-width: 600px;
+      width: 90%;
+      box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
+      border: 2px solid rgba(139, 92, 246, 0.3);
+      animation: slideUp 0.3s ease;
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(50px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    .quiz-question {
+      font-size: 20px;
+      font-weight: 700;
+      color: white;
+      margin-bottom: 24px;
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    .quiz-options {
+      display: grid;
+      gap: 12px;
+    }
+
+    .quiz-option {
+      padding: 16px 20px;
+      background: rgba(30, 41, 59, 0.6);
+      border: 2px solid rgba(100, 116, 139, 0.3);
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      color: #cbd5e1;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .quiz-option:hover {
+      background: rgba(59, 130, 246, 0.2);
+      border-color: rgba(59, 130, 246, 0.5);
+      transform: translateX(-5px);
+    }
+
+    .quiz-option.correct {
+      background: rgba(34, 197, 94, 0.2);
+      border-color: #22c55e;
+      color: #22c55e;
+    }
+
+    .quiz-option.wrong {
+      background: rgba(239, 68, 68, 0.2);
+      border-color: #ef4444;
+      color: #ef4444;
+    }
+
+    .quiz-explanation {
+      margin-top: 24px;
+      padding: 16px;
+      background: rgba(59, 130, 246, 0.1);
+      border-radius: 12px;
+      border-right: 4px solid #3b82f6;
+      color: #cbd5e1;
+      line-height: 1.6;
+      display: none;
+    }
+
+    .quiz-explanation.show {
+      display: block;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .quiz-next {
+      margin-top: 20px;
+      padding: 14px 32px;
+      background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      width: 100%;
+      font-size: 16px;
+      display: none;
+    }
+
+    .quiz-next.show {
+      display: block;
+    }
+
+    .notification {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.8);
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+      padding: 24px 40px;
+      border-radius: 16px;
+      font-size: 20px;
+      font-weight: 700;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      z-index: 2000;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s ease;
+    }
+
+    .notification.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    .welcome-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      animation: fadeIn 0.5s ease;
+    }
+
+    .welcome-card {
+      background: rgba(30, 41, 59, 0.8);
+      -webkit-backdrop-filter: blur();
+      backdrop-filter: blur(20px);
+      border-radius: 24px;
+      padding: 48px;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
+      border: 2px solid rgba(59, 130, 246, 0.3);
+      text-align: center;
+    }
+
+    .welcome-title {
+      font-size: 32px;
+      font-weight: 700;
+      color: white;
+      margin-bottom: 16px;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    .welcome-subtitle {
+      font-size: 16px;
+      color: #cbd5e1;
+      margin-bottom: 32px;
+      line-height: 1.6;
+    }
+
+    .username-input {
+      width: 100%;
+      padding: 16px;
+      border: 2px solid rgba(100, 116, 139, 0.3);
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.6);
+      color: white;
+      font-size: 16px;
+      font-family: inherit;
+      margin-bottom: 20px;
+      text-align: center;
+      direction: rtl;
+    }
+
+    .username-input:focus {
+      outline: none;
+      border-color: #3b82f6;
+    }
+
+    .start-btn {
+      width: 100%;
+      padding: 18px;
+      background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-size: 18px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-family: inherit;
+    }
+
+    .start-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(59, 130, 246, 0.4);
+    }
+.btn {
+  display: inline-block;
+  background: #2ecc71;
+  color: white;
+  padding: 10px 15px;
+  border-radius: 10px;
+  text-decoration: none;
+  font-size: 16px;
+  transition: 0.3s;
+}
+.btn:hover {
+  background: #27ae60;
+}
+
+
+
+    .achievement-popup {
+      position: fixed;
+      top: 100px;
+      right: 20px;
+      background: linear-gradient(135deg, #fbbf24, #f59e0b);
+      color: #1e293b;
+      padding: 20px 24px;
+      border-radius: 16px;
+      font-weight: 700;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      z-index: 2000;
+      transform: translateX(400px);
+      transition: transform 0.5s ease;
+    }
+
+    .achievement-popup.show {
+      transform: translateX(0);
+    }
+
+    .achievement-icon {
+      font-size: 32px;
+      margin-bottom: 8px;
+    }
+
+    @media (max-width: 768px) {
+      .city-score-hud, .action-panel {
+        min-width: auto;
+        width: calc(100% - 40px);
+        left: 20px;
+        right: 20px;
+      }
+
+      .action-panel {
+        top: auto;
+        bottom: 20px;
+        transform: none;
+      }
+
+      .city-score-hud {
+        padding: 16px;
+      }
+
+      .city-avatar {
+        width: 80px;
+        height: 80px;
+        font-size: 60px;
+      }
+      
+    }
+  </style>
+</head>
+<body>
+  <div id="welcomeScreen" class="welcome-screen">
+    <div class="welcome-card">
+      <div class="welcome-title">🌍 أنقذ مدينتك</div>
+      <div class="welcome-subtitle">
+       اهلا بيك وربنا انت احسن حد يخش عندنا اكتب اسمك عشان نعرفك اكتر❤️
+      </div>
+      <input type="text" id="usernameInput" class="username-input" placeholder="أدخل اسمك" maxlength="20">
+      <button id="startGameBtn" class="start-btn">🎮 ابدأ اللعبة</button>
+    </div>
+  </div>
+
+  <div id="gameContainer">
+    <div id="map"></div>
+    <div class="game-overlay" id="gameOverlay"></div>
+
+    <div class="city-score-hud" id="cityScoreHud">
+      <div class="city-avatar" id="cityAvatar">🏙️</div>
+      <div class="city-name" id="cityName">اختر موقعًا</div>
+
+      <div class="score-bar">
+        <div class="score-label">
+          <span>🌫 مستوى التلوث</span>
+          <span class="score-value" id="pollutionValue">0%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill pollution-fill" id="pollutionBar" style="width: 0%">0%</div>
+        </div>
+      </div>
+
+      <div class="score-bar">
+        <div class="score-label">
+          <span>💚 صحة المدينة</span>
+          <span class="score-value" id="healthValue">100%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill health-fill excellent" id="healthBar" style="width: 100%">100%</div>
+        </div>
+      </div>
+
+      <div class="player-stats">
+        <div class="stat-row">
+          <span>🏆 النقاط</span>
+          <span class="stat-value" id="totalPoints">0</span>
+        </div>
+        <div class="stat-row">
+          <span>⭐ المستوى</span>
+          <span class="stat-value" id="playerLevel">1</span>
+        </div>
+        <div class="stat-row">
+          <span>🌳 أشجار مزروعة</span>
+          <span class="stat-value" id="treesPlanted">0</span>
+        </div>
+        <div class="stat-row">
+          <span>🧹 نفايات منظفة</span>
+          <span class="stat-value" id="wasteCleaned">0</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="action-panel">
+      <div style="margin-bottom: 20px; display: flex; gap: 8px; flex-wrap: wrap;">
+        <input type="text" id="locationSearch" class="username-input" placeholder="ابحث عن مدينة..." style="padding: 10px; font-size: 14px; text-align: right; flex: 1; min-width: 120px;">
+        <button id="searchBtn" class="start-btn" style="padding: 10px; width: auto; font-size: 14px; min-width: 70px;">بحث</button>
+        <button id="gpsBtn" class="start-btn" style="padding: 10px; width: auto; font-size: 14px; background: #10b981; min-width: 70px;">📍 GPS</button>
+      </div>
+
+      <div class="panel-title">⚡ إجراءات التحسين</div>
+
+      <button class="action-btn plant" id="plantTreeBtn">
+        <span><span class="action-icon">🌳</span> ازرع شجرة</span>
+        <span class="action-cost">-5 نقاط | +10 صحة</span>
+      </button>
+
+      <button class="action-btn clean" id="cleanWasteBtn">
+        <span><span class="action-icon">🧹</span> نظف النفايات</span>
+        <span class="action-cost">-3 نقاط | +5 صحة</span>
+      </button>
+
+      <button class="action-btn recycle" id="recycleBtn">
+        <span><span class="action-icon">♻️</span> أعد التدوير</span>
+        <span class="action-cost">-4 نقاط | +8 صحة</span>
+      </button>
+
+      <button class="action-btn quiz" id="quizBtn">
+        <span><span class="action-icon">🎓</span> سؤال توعية</span>
+        <span class="action-cost">+10-20 نقطة</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="quiz-modal" id="quizModal">
+    <div class="quiz-card">
+      <div class="quiz-question" id="quizQuestion">السؤال هنا</div>
+      <div class="quiz-options" id="quizOptions"></div>
+      <div class="quiz-explanation" id="quizExplanation"></div>
+      <button class="quiz-next" id="quizNextBtn">التالي</button>
+    </div>
+  </div>
+
+  <div class="notification" id="notification"></div>
+  <div class="achievement-popup" id="achievementPopup">
+    <div class="achievement-icon">🏆</div>
+    <div id="achievementText"></div>
+  </div>
+
+  <script>
+    // =============== الأسئلة الكاملة (15 سؤالًا) ===============
+    const ALL_QUESTIONS = [
+      // 🌍 المستوى 1 – سهل (10 نقاط)
+      {
+        id: 1,
+        question: "لما تكون في الشارع ومعاك زبالة صغيرة، تعمل إيه؟",
+        options: [
+          "أرميها في الأرض",
+          "أحتفظ بيها لحد ما ألاقي سلة",
+          "أرميها في أي مكان فاضي",
+          "أحرقها في المكان"
+        ],
+        correct_answer: "أحتفظ بيها لحد ما ألاقي سلة",
+        explanation: "الاحتفاظ بالزبالة حتى تجد سلة يحافظ على نظافة الشارع ويقلل التلوث البصري والبيئي.",
+        points: 10,
+        category: "waste"
+      },
+      {
+        id: 2,
+        question: "لما أسيب الغرفة، أعمل إيه عشان أوفّر الطاقة؟",
+        options: [
+          "أسيب النور والتكييف شغالين",
+          "أطفيهم قبل ما أخرج",
+          "مش فارقة",
+          "أترك التكييف فقط شغال"
+        ],
+        correct_answer: "أطفيهم قبل ما أخرج",
+        explanation: "إطفاء الأجهزة عند الخروج يقلل استهلاك الكهرباء ويقلل انبعاثات الكربون.",
+        points: 10,
+        category: "energy"
+      },
+      {
+        id: 3,
+        question: "لما أروح السوبرماركت، أختار إيه عشان أساعد البيئة؟",
+        options: [
+          "أستخدم كيس بلاستيك",
+          "أجيب شنط قماش قابلة لإعادة الاستخدام",
+          "أشتري كيس جديد كل مرة",
+          "أطلب كيس ورقي فقط"
+        ],
+        correct_answer: "أجيب شنط قماش قابلة لإعادة الاستخدام",
+        explanation: "الأكياس القماشية تُستخدم مرات عديدة ولا تلوث البيئة مثل البلاستيك الذي يستغرق مئات السنين ليتحلل.",
+        points: 10,
+        category: "plastic"
+      },
+      {
+        id: 4,
+        question: "إيه فائدة زراعة الأشجار؟",
+        options: [
+          "منظر حلو بس",
+          "بتنقي الهواء وتقلل الحرارة",
+          "بتزود الحشرات",
+          "بتخلي الشارع ضيق"
+        ],
+        correct_answer: "بتنقي الهواء وتقلل الحرارة",
+        explanation: "الأشجار تمتص ثاني أكسيد الكربون وتطلق الأكسجين، كما توفر الظل وتقلل درجة الحرارة في المدن.",
+        points: 10,
+        category: "trees"
+      },
+      {
+        id: 5,
+        question: "لما أشرب من زجاجة بلاستيك، أعمل بيها إيه بعدين؟",
+        options: [
+          "أرميها",
+          "أستخدمها تاني أو أعيد تدويرها",
+          "أكسرها",
+          "أحرقها عشان تتلاشى"
+        ],
+        correct_answer: "أستخدمها تاني أو أعيد تدويرها",
+        explanation: "إعادة الاستخدام أو التدوير يقلل النفايات البلاستيكية ويحمي المحيطات والحياة البرية.",
+        points: 10,
+        category: "recycling"
+      },
+
+      // 🌱 المستوى 2 – متوسط (15 نقطة)
+      {
+        id: 6,
+        question: "استخدام المواصلات العامة بدل العربية الخاصة بيساعد في:",
+        options: [
+          "زيادة الزحمة",
+          "تقليل تلوث الهواء",
+          "ملوش تأثير",
+          "زيادة استهلاك الوقود"
+        ],
+        correct_answer: "تقليل تلوث الهواء",
+        explanation: "المواصلات العامة تقلل عدد السيارات على الطريق، مما يقلل الانبعاثات الضارة مثل ثاني أكسيد الكربون.",
+        points: 15,
+        category: "transport"
+      },
+      {
+        id: 7,
+        question: "إيه أكتر تصرف بسيط يقلل التلوث في البيت؟",
+        options: [
+          "فصل القمامة لإعادة التدوير",
+          "رمي كل حاجة في نفس الكيس",
+          "حرق الزبالة",
+          "ترك النفايات في البلكونة"
+        ],
+        correct_answer: "فصل القمامة لإعادة التدوير",
+        explanation: "فصل النفايات يسمح بإعادة تدوير المواد مثل الورق والبلاستيك والمعدن، ويقلل الحاجة لدفن النفايات.",
+        points: 15,
+        category: "waste"
+      },
+      {
+        id: 8,
+        question: "ليه مهم نوفّر في استهلاك الكهرباء؟",
+        options: [
+          "عشان نقلل الفواتير بس",
+          "عشان نقلل انبعاثات الكربون",
+          "مش مهم التوفير",
+          "عشان نستخدم مولد كهرباء"
+        ],
+        correct_answer: "عشان نقلل انبعاثات الكربون",
+        explanation: "معظم الكهرباء تُنتج من الوقود الأحفوري، والتوفير يقلل الاحتراق ويحمي المناخ.",
+        points: 15,
+        category: "energy"
+      },
+      {
+        id: 9,
+        question: "لما أشتري أجهزة كهربائية جديدة، أختارها على أساس إيه؟",
+        options: [
+          "الأرخص",
+          "الأكثر كفاءة في استهلاك الطاقة",
+          "الشكل فقط",
+          "العلامة التجارية فقط"
+        ],
+        correct_answer: "الأكثر كفاءة في استهلاك الطاقة",
+        explanation: "الأجهزة الموفرة للطاقة (مثل التي تحمل تصنيف A+++) تستهلك طاقة أقل وتوفر فواتيرك على المدى الطويل.",
+        points: 15,
+        category: "energy"
+      },
+      {
+        id: 10,
+        question: "إيه الأفضل للبيئة في استخدام الميه؟",
+        options: [
+          "أسيب الحنفية مفتوحة",
+          "أقفلها وأنا بغسل أسناني",
+          "أستخدم ميه زيادة عشان أنضف أكتر",
+          "أغسل السيارة كل يوم"
+        ],
+        correct_answer: "أقفلها وأنا بغسل أسناني",
+        explanation: "إغلاق الحنفية أثناء غسل الأسنان يوفر لترات كثيرة من المياه يوميًا — وهي مورد ثمين!",
+        points: 15,
+        category: "water"
+      },
+
+      // 🌿 المستوى 3 – صعب (20 نقطة)
+      {
+        id: 11,
+        question: "ليه حرق القمامة خطر على البيئة؟",
+        options: [
+          "لأنه بيقلل الزحمة",
+          "لأنه يسبب انبعاث غازات سامة وتلوث الهواء",
+          "عادي مفيش ضرر",
+          "لأنه ينتج طاقة نظيفة"
+        ],
+        correct_answer: "لأنه يسبب انبعاث غازات سامة وتلوث الهواء",
+        explanation: "حرق النفايات يطلق غازات سامة مثل الديوكسين والزئبق، التي تضر بالصحة والبيئة.",
+        points: 20,
+        category: "pollution"
+      },
+      {
+        id: 12,
+        question: "إيه معنى “العيش المستدام”؟",
+        options: [
+          "إننا نستخدم الموارد بحكمة ونفكر في الأجيال الجاية",
+          "نستهلك كل حاجة بسرعة",
+          "نرمي اللي مش محتاجينه",
+          "نشرب ميه معدنية بس"
+        ],
+        correct_answer: "إننا نستخدم الموارد بحكمة ونفكر في الأجيال الجاية",
+        explanation: "العيش المستدام يعني تلبية احتياجاتنا دون المساس بقدرة الأجيال القادمة على تلبية احتياجاتهم.",
+        points: 20,
+        category: "sustainability"
+      },
+      {
+        id: 13,
+        question: "لما عدد السيارات في المدينة يزيد جدًا، إيه التأثير المتوقع؟",
+        options: [
+          "تقليل التلوث",
+          "مفيش تأثير واضح",
+          "زيادة انبعاثات ثاني أكسيد الكربون وتلوث الهواء",
+          "تحسين جودة الهواء"
+        ],
+        correct_answer: "زيادة انبعاثات ثاني أكسيد الكربون وتلوث الهواء",
+        explanation: "كل سيارة تطلق غازات دفيئة — وكلما زاد عددها، زاد التلوث وارتفعت درجات الحرارة في المدن.",
+        points: 20,
+        category: "transport"
+      },
+      {
+        id: 14,
+        question: "ليه لازم نستخدم الطاقة المتجددة زي الشمس والرياح؟",
+        options: [
+          "عشان شكلها حلو",
+          "لأنها نظيفة ومش بتسبب تلوث",
+          "عشان أغلى في التكلفة",
+          "عشان نتبع الموضة"
+        ],
+        correct_answer: "لأنها نظيفة ومش بتسبب تلوث",
+        explanation: "الطاقة المتجددة لا تطلق انبعاثات كربونية، ولا تنفد — على عكس الفحم والنفط.",
+        points: 20,
+        category: "renewables"
+      },
+      {
+        id: 15,
+        question: "إزاي ممكن نساعد مدينتنا تكون أكثر استدامة؟",
+        options: [
+          "بزراعة الأشجار، إعادة التدوير، وترشيد الاستهلاك",
+          "باستخدام سيارات أكتر",
+          "بتجاهل القوانين البيئية",
+          "ببناء مصانع جديدة في وسط المدينة"
+        ],
+        correct_answer: "بزراعة الأشجار، إعادة التدوير، وترشيد الاستهلاك",
+        explanation: "هذه الممارسات البسيطة تُحدث فرقًا كبيرًا في جودة الهواء، النظافة، واستهلاك الموارد.",
+        points: 20,
+        category: "sustainability"
+      }
+    ];
+
+    // =============== خريطة التلوث ===============
+    const POLLUTION_MAP = {
+      'القاهرة': { pollution: 85, health: 15 },
+      'جدة': { pollution: 70, health: 30 },
+      'دبي': { pollution: 60, health: 40 },
+      'الرياض': { pollution: 75, health: 25 },
+      'تونس': { pollution: 65, health: 35 },
+      'بيروت': { pollution: 80, health: 20 },
+      'الدار البيضاء': { pollution: 72, health: 28 },
+      'بغداد': { pollution: 78, health: 22 },
+      'الجزائر': { pollution: 68, health: 32 },
+      highPollutionZones: [
+        [29.5, 31.5, 30.5, 32.5],
+        [24.0, 26.0, 38.0, 40.0],
+        [33.0, 34.0, 35.0, 37.0],
+      ]
+    };
+
+    function getPollutionLevel(lat, lng, cityName = '') {
+      if (cityName && POLLUTION_MAP[cityName]) {
+        return POLLUTION_MAP[cityName];
+      }
+      for (const zone of POLLUTION_MAP.highPollutionZones) {
+        const [minLat, maxLat, minLng, maxLng] = zone;
+        if (lat >= minLat && lat <= maxLat && lng >= minLng && lng <= maxLng) {
+          return { pollution: 80 + Math.floor(Math.random() * 10), health: 20 - Math.floor(Math.random() * 5) };
+        }
+      }
+      return { pollution: 50 + Math.floor(Math.random() * 20), health: 50 - Math.floor(Math.random() * 10) };
+    }
+
+    // =============== حالة اللعبة ===============
+    let gameState = {
+      username: '',
+      globalPoints: 0,
+      level: 1,
+      locations: {},
+      answeredQuestionIds: new Set()
+    };
+
+    let activeLocationKey = null;
+    let map;
+    let markers = [];
+
+    // =============== تهيئة الخريطة ===============
+    function initMap() {
+      map = new maplibregl.Map({
+        container: 'map',
+        style: {
+          version: 8,
+          sources: {
+            'satellite': {
+              type: 'raster',
+              tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+              tileSize: 256,
+              attribution: '© Esri'
+            }
+          },
+          layers: [{
+            id: 'satellite',
+            type: 'raster',
+            source: 'satellite',
+            paint: { 'raster-opacity': 1 }
+          }]
+        },
+        center: [31.2357, 30.0444],
+        zoom: 3
+      });
+
+      map.addControl(new maplibregl.NavigationControl(), 'bottom-left');
+
+      map.on('click', (e) => {
+        const lat = e.lngLat.lat;
+        const lng = e.lngLat.lng;
+        const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+        if (!gameState.locations[key]) {
+          const pollutionData = getPollutionLevel(lat, lng);
+          gameState.locations[key] = {
+            trees: 0,
+            cleaned: 0,
+            pollution: pollutionData.pollution,
+            health: pollutionData.health,
+            name: 'نقطة مختارة'
+          };
+        }
+        activeLocationKey = key;
+        updateUI();
+        drawSavedMarkers();
+        if (gameState.locations[key].pollution > 70) {
+          showNotification('⚠️ هذه المنطقة ملوثة! ساعد في تنظيفها!');
+        }
+      });
+    }
+
+    // =============== دوال الموقع ===============
+    async function searchLocation(query) {
+      if (!query.trim()) return;
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`;
+        const response = await fetch(url);
+        const data = await response.json();
+        if (data && data[0]) {
+          const lat = parseFloat(data[0].lat);
+          const lng = parseFloat(data[0].lon);
+          const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+          const displayName = data[0].display_name.split(',')[0];
+          if (!gameState.locations[key]) {
+            const pollutionData = getPollutionLevel(lat, lng, displayName);
+            gameState.locations[key] = {
+              trees: 0,
+              cleaned: 0,
+              pollution: pollutionData.pollution,
+              health: pollutionData.health,
+              name: displayName
+            };
+          }
+          activeLocationKey = key;
+          map.flyTo({ center: [lng, lat], zoom: 16, duration: 1500 });
+          updateUI();
+          drawSavedMarkers();
+          if (gameState.locations[key].pollution > 70) {
+            showNotification(`⚠️ ${displayName} تعاني من تلوث عالي!`);
+          }
+        } else {
+          showNotification('❌ لم نجد هذا المكان!');
+        }
+      } catch (err) {
+        console.error(err);
+        showNotification('❌ خطأ في الاتصال!');
+      }
+    }
+
+    function useCurrentLocation() {
+      if (!navigator.geolocation) {
+        showNotification('❌ GPS غير مدعوم!');
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+          if (!gameState.locations[key]) {
+            const pollutionData = getPollutionLevel(lat, lng);
+            gameState.locations[key] = {
+              trees: 0,
+              cleaned: 0,
+              pollution: pollutionData.pollution,
+              health: pollutionData.health,
+              name: 'موقعي'
+            };
+          }
+          activeLocationKey = key;
+          map.flyTo({ center: [lng, lat], zoom: 16, duration: 1500 });
+          updateUI();
+          drawSavedMarkers();
+          if (gameState.locations[key].pollution > 70) {
+            showNotification('⚠️ منطقتك ملوثة! ساعد في تنظيفها!');
+          }
+        },
+        () => {
+          showNotification('❌ فشل تحديد موقعك!');
+        }
+      );
+    }
+
+    // =============== رسم العناصر ===============
+    function drawSavedMarkers() {
+      if (markers) markers.forEach(m => m.remove());
+      markers = [];
+      if (!activeLocationKey) return;
+      const loc = gameState.locations[activeLocationKey];
+      const [lat, lng] = activeLocationKey.split(',').map(Number);
+      for (let i = 0; i < loc.trees; i++) {
+        const marker = new maplibregl.Marker({ color: '#10b981' })
+          .setLngLat([lng + (Math.random() - 0.5) * 0.0005, lat + (Math.random() - 0.5) * 0.0005])
+          .addTo(map);
+        markers.push(marker);
+      }
+      for (let i = 0; i < loc.cleaned; i++) {
+        const marker = new maplibregl.Marker({ color: '#3b82f6' })
+          .setLngLat([lng + (Math.random() - 0.5) * 0.0005, lat + (Math.random() - 0.5) * 0.0005])
+          .addTo(map);
+        markers.push(marker);
+      }
+    }
+
+    // =============== باقي الدوال ===============
+    function saveGame() {
+      localStorage.setItem('ecoGameRealSave', JSON.stringify({
+        ...gameState,
+        answeredQuestionIds: Array.from(gameState.answeredQuestionIds)
+      }));
+    }
+
+    function loadGame() {
+      const saved = localStorage.getItem('ecoGameRealSave');
+      if (saved) {
+        const data = JSON.parse(saved);
+        gameState = {
+          ...data,
+          answeredQuestionIds: new Set(data.answeredQuestionIds || [])
+        };
+        document.getElementById('usernameInput').value = gameState.username || '';
+      }
+    }
+
+    function updateUI() {
+      if (!activeLocationKey) {
+        document.getElementById('cityName').textContent = 'اختر موقعًا';
+        return;
+      }
+      const loc = gameState.locations[activeLocationKey];
+      document.getElementById('cityName').textContent = loc.name;
+      document.getElementById('pollutionValue').textContent = loc.pollution + '%';
+      document.getElementById('healthValue').textContent = loc.health + '%';
+      document.getElementById('totalPoints').textContent = gameState.globalPoints;
+      document.getElementById('playerLevel').textContent = gameState.level;
+      document.getElementById('treesPlanted').textContent = loc.trees;
+      document.getElementById('wasteCleaned').textContent = loc.cleaned;
+
+      const pollutionBar = document.getElementById('pollutionBar');
+      pollutionBar.style.width = loc.pollution + '%';
+      pollutionBar.textContent = loc.pollution + '%';
+      pollutionBar.className = 'progress-fill pollution-fill' + 
+        (loc.pollution < 30 ? ' minimal' : loc.pollution < 60 ? ' low' : '');
+
+      const healthBar = document.getElementById('healthBar');
+      healthBar.style.width = loc.health + '%';
+      healthBar.textContent = loc.health + '%';
+      healthBar.className = 'progress-fill health-fill' + 
+        (loc.health > 70 ? ' excellent' : loc.health > 40 ? ' good' : '');
+
+      const cityAvatar = document.getElementById('cityAvatar');
+      const overlay = document.getElementById('gameOverlay');
+      const hud = document.getElementById('cityScoreHud');
+
+      if (loc.health >= 70) {
+        cityAvatar.textContent = '🌳🏙️✨';
+        cityAvatar.classList.remove('sick');
+        overlay.classList.add('healthy');
+        hud.classList.add('healthy');
+        map.setPaintProperty('satellite', 'raster-saturation', 0.3);
+      } else if (loc.health >= 40) {
+        cityAvatar.textContent = '🏙️';
+        cityAvatar.classList.remove('sick');
+        overlay.classList.remove('healthy');
+        hud.classList.remove('healthy');
+        map.setPaintProperty('satellite', 'raster-saturation', 0);
+      } else {
+        cityAvatar.textContent = '🏚️💨';
+        cityAvatar.classList.add('sick');
+        overlay.classList.remove('healthy');
+        hud.classList.remove('healthy');
+        map.setPaintProperty('satellite', 'raster-saturation', -0.5);
+      }
+
+      // تحديث المستوى
+      const newLevel = Math.floor(gameState.globalPoints / 100) + 1;
+      if (gameState.level !== newLevel) {
+        gameState.level = newLevel;
+        showAchievement(`🎉 مستوى جديد! أنت الآن مستوى ${gameState.level}`);
+      }
+
+      saveGame();
+    }
+
+    function showNotification(message) {
+      const el = document.getElementById('notification');
+      el.textContent = message;
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), 2500);
+    }
+
+    function showAchievement(message) {
+      const el = document.getElementById('achievementPopup');
+      document.getElementById('achievementText').textContent = message;
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), 3000);
+    }
+
+    function getRandomUnansweredQuestion() {
+      const unanswered = ALL_QUESTIONS.filter(q => !gameState.answeredQuestionIds.has(q.id));
+      if (unanswered.length === 0) {
+        gameState.answeredQuestionIds.clear();
+        return ALL_QUESTIONS[Math.floor(Math.random() * ALL_QUESTIONS.length)];
+      }
+      return unanswered[Math.floor(Math.random() * unanswered.length)];
+    }
+
+    // =============== أحداث الأزرار ===============
+    document.getElementById('plantTreeBtn').addEventListener('click', () => {
+      if (!activeLocationKey) {
+        showNotification('❌ اختر موقعًا أولًا!');
+        return;
+      }
+      if (gameState.globalPoints < 5) {
+        showNotification('❌ تحتاج 5 نقاط!');
+        return;
+      }
+      const loc = gameState.locations[activeLocationKey];
+      gameState.globalPoints -= 5;
+      loc.trees++;
+      loc.health = Math.min(100, loc.health + 10);
+      loc.pollution = Math.max(0, loc.pollution - 8);
+      showNotification('🌳 زرعت شجرة!');
+      updateUI();
+      drawSavedMarkers();
+    });
+
+    document.getElementById('cleanWasteBtn').addEventListener('click', () => {
+      if (!activeLocationKey) {
+        showNotification('❌ اختر موقعًا أولًا!');
+        return;
+      }
+      if (gameState.globalPoints < 3) {
+        showNotification('❌ تحتاج 3 نقاط!');
+        return;
+      }
+      const loc = gameState.locations[activeLocationKey];
+      gameState.globalPoints -= 3;
+      loc.cleaned++;
+      loc.health = Math.min(100, loc.health + 5);
+      loc.pollution = Math.max(0, loc.pollution - 5);
+      showNotification('🧹 نظفت نفايات!');
+      updateUI();
+      drawSavedMarkers();
+    });
+
+    document.getElementById('recycleBtn').addEventListener('click', () => {
+      if (!activeLocationKey) {
+        showNotification('❌ اختر موقعًا أولًا!');
+        return;
+      }
+      if (gameState.globalPoints < 4) {
+        showNotification('❌ تحتاج 4 نقاط!');
+        return;
+      }
+      const loc = gameState.locations[activeLocationKey];
+      gameState.globalPoints -= 4;
+      loc.health = Math.min(100, loc.health + 8);
+      loc.pollution = Math.max(0, loc.pollution - 6);
+      showNotification('♻️ أعدت تدوير!');
+      updateUI();
+    });
+
+    document.getElementById('quizBtn').addEventListener('click', () => {
+      if (!activeLocationKey) {
+        showNotification('❌ اختر موقعًا أولًا!');
+        return;
+      }
+      const quiz = getRandomUnansweredQuestion();
+      gameState.answeredQuestionIds.add(quiz.id);
+
+      const modal = document.getElementById('quizModal');
+      const questionEl = document.getElementById('quizQuestion');
+      const optionsEl = document.getElementById('quizOptions');
+      const explanationEl = document.getElementById('quizExplanation');
+      const nextBtn = document.getElementById('quizNextBtn');
+
+      questionEl.textContent = quiz.question;
+      optionsEl.innerHTML = '';
+      quiz.options.forEach(option => {
+        const div = document.createElement('div');
+        div.className = 'quiz-option';
+        div.textContent = option;
+        div.addEventListener('click', () => {
+          document.querySelectorAll('.quiz-option').forEach(opt => opt.style.pointerEvents = 'none');
+          document.querySelectorAll('.quiz-option').forEach(opt => {
+            if (opt.textContent === quiz.correct_answer) opt.classList.add('correct');
+          });
+          if (option === quiz.correct_answer) {
+            div.classList.add('correct');
+            gameState.globalPoints += quiz.points;
+            showNotification(`✅ إجابة صحيحة! +${quiz.points} نقطة`);
+          } else {
+            div.classList.add('wrong');
+            showNotification('❌ إجابة خاطئة!');
+          }
+          explanationEl.textContent = quiz.explanation;
+          explanationEl.classList.add('show');
+          nextBtn.classList.add('show');
+          updateUI();
+        });
+        optionsEl.appendChild(div);
+      });
+      explanationEl.classList.remove('show');
+      nextBtn.classList.remove('show');
+      modal.classList.add('active');
+    });
+
+    document.getElementById('quizNextBtn').addEventListener('click', () => {
+      document.getElementById('quizModal').classList.remove('active');
+    });
+
+    // =============== بدء اللعبة ===============
+    loadGame();
+    document.getElementById('startGameBtn').addEventListener('click', () => {
+      const username = document.getElementById('usernameInput').value.trim();
+      if (!username) { alert('الرجاء إدخال اسمك'); return; }
+      gameState.username = username;
+      document.getElementById('welcomeScreen').style.display = 'none';
+      initMap();
+    });
+
+    document.getElementById('searchBtn').addEventListener('click', () => {
+      searchLocation(document.getElementById('locationSearch').value);
+    });
+
+    document.getElementById('gpsBtn').addEventListener('click', useCurrentLocation);
+
+    document.getElementById('locationSearch').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        searchLocation(e.target.value);
+      }
+    });
+  </script>
+</body>
+</html>
